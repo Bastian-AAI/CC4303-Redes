@@ -40,29 +40,36 @@ def parse_dns_message(data: bytes):
         "additional": record.ar,
     }
 
-def resolver(mensaje_consulta: bytes, ip_addr: str = ROOT_IP) -> bytes:
+def resolver(mensaje_consulta: bytes, ip_addr: str = ROOT_IP, ns_name: str = ".", debug: bool = True) -> bytes:
+    # debug
+    if debug:
+        print(f"(debug) Consultando '{parse_dns_message(mensaje_consulta)['qname']}' a '{ns_name}' con dirección IP '{ip_addr}'")
+
     # a
     reply_bytes = send_query(mensaje_consulta, ip_addr)
     reply = parse_dns_message(reply_bytes)
 
     # b
     if any(rr.rtype == QTYPE.A for rr in reply["answers"]):
+        if debug:
+            ip_addr = extract_a_ip(reply["answers"])
+            print(f"(debug) Respuesta encontrada para '{reply['qname']}' en '{ns_name}' con dirección IP '{ip_addr}'")
         return reply_bytes
 
     # c
     if reply["authority"]:
-        aditional_ip = extract_a_ip(reply["additional"])
-        if aditional_ip:
-            return resolver(mensaje_consulta, aditional_ip)
+        ns_name = extract_ns_name(reply["authority"]) or ns_name
+        additional_ip = extract_a_ip(reply["additional"])
+        if additional_ip:
+            return resolver(mensaje_consulta, additional_ip, ns_name, debug)
         else:
-            ns_name = extract_ns_name(reply["authority"])
             if ns_name:
                 ns_query = DNSRecord.question(ns_name).pack()
-                ns_reply_bytes = send_query(ns_query, ROOT_IP)
+                ns_reply_bytes = resolver(ns_query, ROOT_IP, ns_name, debug)
                 ns_reply = parse_dns_message(ns_reply_bytes)
                 ns_ip = extract_a_ip(ns_reply["answers"])
                 if ns_ip:
-                    return resolver(mensaje_consulta, ns_ip)
+                    return resolver(mensaje_consulta, ns_ip, ns_name, debug)
 
     #d
     return reply_bytes
