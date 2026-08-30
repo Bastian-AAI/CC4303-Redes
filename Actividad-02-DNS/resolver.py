@@ -9,7 +9,7 @@ PORT = 8000
 BUFFER_SIZE = 4096
 ROOT_IP = "198.41.0.4"
 
-history = deque(maxlen=10)
+history = deque(maxlen=20)
 dns_cache = {}
 
 def send_query(message: bytes, ip_addr: str) -> bytes:
