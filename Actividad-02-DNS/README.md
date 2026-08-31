@@ -1,16 +1,19 @@
 # Control 01
 ## Actividad-02-DNS: construyamos un resolver
 **Integrantes:** Bastián Arias y Tomás León
+**Repositorio:** https://github.com/Bastian-AAI/CC4303-Redes/tree/C1/Actividad-02
+**Archivo principal:** `Actividad-02-DNS/resolver.py`
+**Informe:** `Actividad-02-DNS/README.md`
 
 ### 1. Descripción de la Solución e Implementación
 
 En esta actividad se desarrolló un resolver DNS iterativo con caché en Python. Se utilizaron sockets y la librería dnslib para empaquetar y desglosar mensajes DNS.
 
-#### 1.1 Configuración del Socket
+#### Configuración del Socket
 
 Se utilizó el socket no orientado a conexión (`SOCK_DGRAM`) del módulo socket para el envío de mensajes DNS. La justificación de usar este tipo de socket es que el protocolo DNS necesita enviar mensajes cortos y de baja latencia, por lo que no requiere el establecimiento de una conexión previa que lo haga más ineficiente.
 
-#### 1.2 Algoritmo de Resolución Iterativa
+#### Algoritmo de Resolución Iterativa
 
 El resolver implementa la función `resolver` que recibe como parámetros el mensaje DNS en bytes y la dirección IP del servidor DNS. Siguiendo la lógica iterativa desde la IP raíz (`198.41.0.4`):
 
@@ -21,7 +24,7 @@ El resolver implementa la función `resolver` que recibe como parámetros el men
    - Si la IP NO está en `ADDITIONAL`, resuelve recursivamente el nombre de dominio del Name Server (consultando desde la raíz `ROOT_IP`), y posteriormente consulta por el dominio original a la IP obtenida del Name Server.
 4. Si la respuesta no es reconocida o está vacía, retorna el mensaje recibido.
 
-#### 1.3 Sistema de Caché
+#### Sistema de Caché
 
 El resolver cuenta con la función `resolver_with_cache` que permite utilizar un sistema de caché para almacenar y recuperar respuestas DNS. Mantiene las últimas 20 consultas recibidas en una estructura `history = deque(maxlen=20)` y calcula los 3 dominios más frecuentes mediante `Counter(history).most_common(3)`. Si la consulta actual pertenece a los 3 dominios más frecuentes y ya se encuentra almacenada en `dns_cache`, se retorna directamente la respuesta guardada sin realizar consultas de red.
 
