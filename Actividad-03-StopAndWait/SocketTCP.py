@@ -131,3 +131,112 @@ class SocketTCP:
                 break
 
         return new_socket, new_socket.address
+
+    def _send_stop_and_wait(self, data):
+        packet = self.create_segment({
+            'seq': self.seq,
+            'ack_num': 0,
+            'syn': False,
+            'ack': False,
+            'fin': False,
+            'data': data
+        })
+        expected_ack = self.seq + len(data)
+        self.socket.settimeout(self.timeout)
+
+        while True:
+            try:
+                self.socket.sendto(packet, self.dest_address)
+                ack_data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+                ack_seg = self.parse_segment(ack_data)
+                if ack_seg['ack'] and ack_seg['ack_num'] == expected_ack:
+                    self.seq = expected_ack
+                    break
+            except socket.timeout:
+                continue
+
+    def send(self, message):
+        if isinstance(message, str):
+            message = message.encode('utf-8')
+
+        message_length = len(message)
+
+        # 1. Enviar el largo del mensaje en el primer segmento
+        length_data = str(message_length).encode('utf-8')
+        self._send_stop_and_wait(length_data)
+
+        # 2. Enviar el contenido del mensaje en fragmentos de hasta MAX_DATA_SIZE bytes
+        for i in range(0, message_length, MAX_DATA_SIZE):
+            chunk = message[i : i + MAX_DATA_SIZE]
+            self._send_stop_and_wait(chunk)
+
+    def recv(self, buff_size):
+        self.socket.settimeout(None)
+
+        # 1. Si no hay un mensaje en curso ni datos pendientes en el buffer, esperamos el message_length
+        if self.remaining_bytes == 0 and len(self.recv_buffer) == 0:
+            while True:
+                data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+                seg = self.parse_segment(data)
+                if not seg['syn'] and not seg['fin'] and not seg['ack']:
+                    if seg['seq'] == self.ack:
+                        message_length = int(seg['data'].decode('utf-8'))
+                        self.remaining_bytes = message_length
+                        self.ack += len(seg['data'])
+                        ack_seg = self.create_segment({
+                            'seq': self.seq,
+                            'ack_num': self.ack,
+                            'syn': False,
+                            'ack': True,
+                            'fin': False,
+                            'data': b''
+                        })
+                        self.socket.sendto(ack_seg, self.dest_address)
+                        break
+                    elif seg['seq'] < self.ack:
+                        ack_seg = self.create_segment({
+                            'seq': self.seq,
+                            'ack_num': self.ack,
+                            'syn': False,
+                            'ack': True,
+                            'fin': False,
+                            'data': b''
+                        })
+                        self.socket.sendto(ack_seg, self.dest_address)
+
+        # 2. Recibir trozos de datos hasta acumular al menos min(remaining_bytes, buff_size)
+        target_bytes = min(self.remaining_bytes, buff_size)
+        while len(self.recv_buffer) < target_bytes and self.remaining_bytes > len(self.recv_buffer):
+            data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+            seg = self.parse_segment(data)
+            if not seg['syn'] and not seg['fin'] and not seg['ack']:
+                if seg['seq'] == self.ack:
+                    self.recv_buffer.extend(seg['data'])
+                    self.ack += len(seg['data'])
+                    ack_seg = self.create_segment({
+                        'seq': self.seq,
+                        'ack_num': self.ack,
+                        'syn': False,
+                        'ack': True,
+                        'fin': False,
+                        'data': b''
+                    })
+                    self.socket.sendto(ack_seg, self.dest_address)
+                elif seg['seq'] < self.ack:
+                    ack_seg = self.create_segment({
+                        'seq': self.seq,
+                        'ack_num': self.ack,
+                        'syn': False,
+                        'ack': True,
+                        'fin': False,
+                        'data': b''
+                    })
+                    self.socket.sendto(ack_seg, self.dest_address)
+
+        # 3. Extraer a lo más buff_size bytes del buffer interno
+        to_return_len = min(buff_size, len(self.recv_buffer))
+        chunk_to_return = bytes(self.recv_buffer[:to_return_len])
+        self.recv_buffer = self.recv_buffer[to_return_len:]
+        self.remaining_bytes -= to_return_len
+
+        return chunk_to_return
