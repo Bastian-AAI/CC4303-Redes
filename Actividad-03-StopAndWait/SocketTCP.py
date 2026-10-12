@@ -1,6 +1,7 @@
 import socket
 import struct
 import random
+import time
 
 HEADER_FORMAT = "!II???"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
@@ -312,8 +313,7 @@ class SocketTCP:
         return chunk_to_return
 
     def close(self):
-        self.socket.settimeout(None)
-        # 1. Enviar FIN
+        self.socket.settimeout(self.timeout)
         fin_seg = self.create_segment({
             'seq': self.seq,
             'ack_num': self.ack,
@@ -322,35 +322,53 @@ class SocketTCP:
             'fin': True,
             'data': b''
         })
-        self._sendto(fin_seg, self.dest_address)
 
-        # 2. Esperar mensaje con FIN y ACK
         host_b_fin_seq = 0
-        while True:
-            data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
-            seg = self.parse_segment(data)
-            if seg['fin'] and seg['ack']:
-                host_b_fin_seq = seg['seq']
-                break
+        received_fin_ack = False
+        timeouts_count = 0
 
-        # 3. Enviar ACK final confirmando el FIN
-        ack_seg = self.create_segment({
-            'seq': self.seq + 1,
-            'ack_num': host_b_fin_seq + 1,
-            'syn': False,
-            'ack': True,
-            'fin': False,
-            'data': b''
-        })
-        self._sendto(ack_seg, self.dest_address)
+        while not received_fin_ack and timeouts_count < 3:
+            self._sendto(fin_seg, self.dest_address)
+            try:
+                while not received_fin_ack:
+                    data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+                    seg = self.parse_segment(data)
+                    # Recibe FIN y ACK
+                    if seg['fin'] and seg['ack']:
+                        received_fin_ack = True
+                        host_b_fin_seq = seg['seq']
+                        break
+            except socket.timeout:
+                timeouts_count += 1
+                if SocketTCP.debug:
+                    print(f"[DEBUG] Timeout {timeouts_count}/3 en close esperando FIN+ACK, reenviando FIN...")
+                if timeouts_count >= 3:
+                    if SocketTCP.debug:
+                        print("[DEBUG] Alcanzado límite de 3 timeouts en close. Cerrando conexión.")
+                    break
+
+        # Si se recibió FIN+ACK con éxito, reenvía el último ACK 3 veces espaciadas por timeout
+        if received_fin_ack:
+            ack_seg = self.create_segment({
+                'seq': self.seq + 1,
+                'ack_num': host_b_fin_seq + 1,
+                'syn': False,
+                'ack': True,
+                'fin': False,
+                'data': b''
+            })
+            for i in range(3):
+                self._sendto(ack_seg, self.dest_address)
+                if i < 2:
+                    time.sleep(self.timeout)
 
         self.is_connected = False
         self.is_closed = True
         self.socket.close()
 
     def recv_close(self):
+        # Esperar FIN
         self.socket.settimeout(None)
-        # 1. Esperar FIN
         while True:
             data, sender_addr = self.socket.recvfrom(UDP_BUFFER_SIZE)
             self.dest_address = sender_addr
@@ -360,7 +378,7 @@ class SocketTCP:
                 self.ack = host_a_seq + 1
                 break
 
-        # 2. Enviar FIN y ACK
+        # Enviar FIN y ACK
         fin_ack_seg = self.create_segment({
             'seq': self.seq,
             'ack_num': self.ack,
@@ -371,12 +389,29 @@ class SocketTCP:
         })
         self._sendto(fin_ack_seg, self.dest_address)
 
-        # 3. Esperar ACK final
-        while True:
-            data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
-            seg = self.parse_segment(data)
-            if seg['ack'] and not seg['fin']:
-                break
+        # Esperar el último ACK con hasta 3 timeouts
+        self.socket.settimeout(self.timeout)
+        timeouts_count = 0
+        while timeouts_count < 3:
+            try:
+                data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+                seg = self.parse_segment(data)
+                if seg['ack'] and not seg['fin']:
+                    # Recibido último ACK
+                    break
+                elif seg['fin'] and not seg['ack']:
+                    # No le llegó el FIN+ACK, reenviar FIN+ACK
+                    self._sendto(fin_ack_seg, self.dest_address)
+            except socket.timeout:
+                timeouts_count += 1
+                if SocketTCP.debug:
+                    print(f"[DEBUG] Timeout {timeouts_count}/3 en recv_close esperando último ACK...")
+                # Reenviar FIN+ACK por si no lo recibió
+                self._sendto(fin_ack_seg, self.dest_address)
+                if timeouts_count >= 3:
+                    if SocketTCP.debug:
+                        print("[DEBUG] Alcanzado límite de 3 timeouts en recv_close. Cerrando conexión.")
+                    break
 
         self.is_connected = False
         self.is_closed = True
