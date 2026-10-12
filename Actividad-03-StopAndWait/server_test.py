@@ -28,3 +28,9 @@ message_part_2 = connection_socketTCP.recv(buff_size)
 print("Test 3 received:", message_part_1 + message_part_2)
 if (message_part_1 + message_part_2) == "Mensaje de largo 19".encode(): print("Test 3: Passed")
 else: print("Test 3: Failed")
+
+# Cierre de conexión
+print("Cerrando conexión en el servidor...")
+connection_socketTCP.recv_close()
+server_socketTCP.socket.close()
+print("Conexión cerrada exitosamente en servidor.")

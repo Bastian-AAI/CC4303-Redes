@@ -240,3 +240,73 @@ class SocketTCP:
         self.remaining_bytes -= to_return_len
 
         return chunk_to_return
+
+    def close(self):
+        self.socket.settimeout(None)
+        # 1. Enviar FIN
+        fin_seg = self.create_segment({
+            'seq': self.seq,
+            'ack_num': self.ack,
+            'syn': False,
+            'ack': False,
+            'fin': True,
+            'data': b''
+        })
+        self.socket.sendto(fin_seg, self.dest_address)
+
+        # 2. Esperar mensaje con FIN y ACK
+        host_b_fin_seq = 0
+        while True:
+            data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+            seg = self.parse_segment(data)
+            if seg['fin'] and seg['ack']:
+                host_b_fin_seq = seg['seq']
+                break
+
+        # 3. Enviar ACK final confirmando el FIN
+        ack_seg = self.create_segment({
+            'seq': self.seq + 1,
+            'ack_num': host_b_fin_seq + 1,
+            'syn': False,
+            'ack': True,
+            'fin': False,
+            'data': b''
+        })
+        self.socket.sendto(ack_seg, self.dest_address)
+
+        self.is_connected = False
+        self.is_closed = True
+        self.socket.close()
+
+    def recv_close(self):
+        self.socket.settimeout(None)
+        # 1. Esperar FIN
+        while True:
+            data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+            seg = self.parse_segment(data)
+            if seg['fin'] and not seg['ack']:
+                host_a_seq = seg['seq']
+                self.ack = host_a_seq + 1
+                break
+
+        # 2. Enviar FIN y ACK
+        fin_ack_seg = self.create_segment({
+            'seq': self.seq,
+            'ack_num': self.ack,
+            'syn': False,
+            'ack': True,
+            'fin': True,
+            'data': b''
+        })
+        self.socket.sendto(fin_ack_seg, self.dest_address)
+
+        # 3. Esperar ACK final
+        while True:
+            data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
+            seg = self.parse_segment(data)
+            if seg['ack'] and not seg['fin']:
+                break
+
+        self.is_connected = False
+        self.is_closed = True
+        self.socket.close()

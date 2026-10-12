@@ -17,3 +17,8 @@ client_socketTCP.send(message)
 # test 3
 message = "Mensaje de largo 19".encode()
 client_socketTCP.send(message)
+
+# Cierre de conexión
+print("Cerrando conexión en el cliente...")
+client_socketTCP.close()
+print("Conexión cerrada exitosamente en cliente.")
