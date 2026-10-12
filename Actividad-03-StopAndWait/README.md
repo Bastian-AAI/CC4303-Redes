@@ -250,6 +250,14 @@ sequenceDiagram
     Note over A,B: Cierre tolerante completado exitosamente
 ```
 
+#### 3.4. Caso Borde: Pérdida del Último ACK de Datos antes de `recv_close()`
+
+##### ¿Qué sucede?
+Si se pierde en la red el `ACK` correspondiente al último fragmento de datos transmitido, el emisor agotará su timeout y reenviará ese mismo fragmento. Sin embargo, el receptor ya habrá terminado de leer la totalidad del mensaje esperado y pasará de inmediato a invocar `recv_close()`. Si `recv_close()` se limitara a esperar exclusivamente paquetes `FIN`, ignoraría el paquete de datos retransmitido sin responder, provocando un bloqueo mutuo. El emisor quedaría atrapado retransmitiendo en `send()` indefinidamente y nunca llegaría a llamar a `close()`.
+
+##### Solución Implementada:
+En `recv_close()` se incluyó la detección y respuesta ante segmentos de datos (`not syn and not fin and not ack`). Si el receptor recibe datos mientras espera el `FIN` inicial o durante la espera del `ACK` final de cierre, retransmite de inmediato la confirmación `ACK` con `ack_num = self.ack`. Con esto, el emisor recibe la confirmación pendiente, completa exitosamente `send()` y procede a enviar el `FIN` para cerrar la conexión de manera limpia.
+
 ### 4. Pruebas de Funcionalidad y Resultados
 
 1. **Tests del Enunciado (`server_test.py` y `client_test.py`):**

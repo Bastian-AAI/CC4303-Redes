@@ -378,6 +378,17 @@ class SocketTCP:
                 host_a_seq = seg['seq']
                 self.ack = host_a_seq + 1
                 break
+            elif not seg['syn'] and not seg['fin'] and not seg['ack']:
+                # El cliente sigue retransmitiendo datos porque se perdió el último ACK en send/recv
+                ack_seg = self.create_segment({
+                    'seq': self.seq,
+                    'ack_num': self.ack,
+                    'syn': False,
+                    'ack': True,
+                    'fin': False,
+                    'data': b''
+                })
+                self._sendto(ack_seg, self.dest_address)
 
         # Enviar FIN y ACK
         fin_ack_seg = self.create_segment({
@@ -403,6 +414,17 @@ class SocketTCP:
                 elif seg['fin'] and not seg['ack']:
                     # No le llegó el FIN+ACK, reenviar FIN+ACK
                     self._sendto(fin_ack_seg, self.dest_address)
+                elif not seg['syn'] and not seg['fin'] and not seg['ack']:
+                    # Reenviar ACK de datos por si aún retransmite
+                    ack_seg = self.create_segment({
+                        'seq': self.seq,
+                        'ack_num': self.ack,
+                        'syn': False,
+                        'ack': True,
+                        'fin': False,
+                        'data': b''
+                    })
+                    self._sendto(ack_seg, self.dest_address)
             except socket.timeout:
                 timeouts_count += 1
                 if SocketTCP.debug:
