@@ -2,6 +2,7 @@ import socket
 import struct
 import random
 import time
+import sys
 
 HEADER_FORMAT = "!II???"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
@@ -56,7 +57,7 @@ class SocketTCP:
     def _sendto(self, data, addr):
         if SocketTCP.loss_rate > 0.0 and random.random() < SocketTCP.loss_rate:
             if SocketTCP.debug:
-                print(f"[DEBUG LOSS] Paquete simulado como perdido hacia {addr}")
+                print(f"[DEBUG LOSS] Paquete simulado como perdido hacia {addr}", file=sys.stderr)
             return
         self.socket.sendto(data, addr)
 
@@ -96,7 +97,7 @@ class SocketTCP:
                     break
             except socket.timeout:
                 if SocketTCP.debug:
-                    print("[DEBUG] Timeout en connect esperando SYN-ACK, retransmitiendo SYN...")
+                    print("[DEBUG] Timeout en connect esperando SYN-ACK, retransmitiendo SYN...", file=sys.stderr)
                 continue
 
         # 3. Enviar ACK final
@@ -157,7 +158,7 @@ class SocketTCP:
                 # Caso borde: El último ACK se perdió pero el cliente ya pasó a enviar datos
                 if not ack_seg['syn'] and not ack_seg['ack'] and not ack_seg['fin']:
                     if SocketTCP.debug:
-                        print("[DEBUG] Caso borde: Recibidos datos durante accept. El cliente ya abrió la conexión.")
+                        print("[DEBUG] Caso borde: Recibidos datos durante accept. El cliente ya abrió la conexión.", file=sys.stderr)
                     new_socket.buffered_packet = ack_data
                     new_socket.dest_address = sender_addr
                     new_socket.seq += 1
@@ -166,7 +167,7 @@ class SocketTCP:
 
             except socket.timeout:
                 if SocketTCP.debug:
-                    print("[DEBUG] Timeout en accept esperando ACK final, retransmitiendo SYN-ACK...")
+                    print("[DEBUG] Timeout en accept esperando ACK final, retransmitiendo SYN-ACK...", file=sys.stderr)
                 continue
 
         return new_socket, new_socket.address
@@ -192,7 +193,7 @@ class SocketTCP:
                 # Si recibimos un SYN-ACK duplicado (caso borde de ACK perdido en handshake)
                 if ack_seg['syn'] and ack_seg['ack']:
                     if SocketTCP.debug:
-                        print("[DEBUG] Recibido SYN-ACK durante send: reenviando ACK del handshake...")
+                        print("[DEBUG] Recibido SYN-ACK durante send: reenviando ACK del handshake...", file=sys.stderr)
                     handshake_ack = self.create_segment({
                         'seq': self.seq,
                         'ack_num': self.ack,
@@ -209,7 +210,7 @@ class SocketTCP:
                     break
             except socket.timeout:
                 if SocketTCP.debug:
-                    print(f"[DEBUG] Timeout en send (seq={self.seq}), retransmitiendo paquete...")
+                    print(f"[DEBUG] Timeout en send (seq={self.seq}), retransmitiendo paquete...", file=sys.stderr)
                 continue
 
     def send(self, message):
@@ -341,10 +342,10 @@ class SocketTCP:
             except socket.timeout:
                 timeouts_count += 1
                 if SocketTCP.debug:
-                    print(f"[DEBUG] Timeout {timeouts_count}/3 en close esperando FIN+ACK, reenviando FIN...")
+                    print(f"[DEBUG] Timeout {timeouts_count}/3 en close esperando FIN+ACK, reenviando FIN...", file=sys.stderr)
                 if timeouts_count >= 3:
                     if SocketTCP.debug:
-                        print("[DEBUG] Alcanzado límite de 3 timeouts en close. Cerrando conexión.")
+                        print("[DEBUG] Alcanzado límite de 3 timeouts en close. Cerrando conexión.", file=sys.stderr)
                     break
 
         # Si se recibió FIN+ACK con éxito, reenvía el último ACK 3 veces espaciadas por timeout
@@ -405,12 +406,12 @@ class SocketTCP:
             except socket.timeout:
                 timeouts_count += 1
                 if SocketTCP.debug:
-                    print(f"[DEBUG] Timeout {timeouts_count}/3 en recv_close esperando último ACK...")
+                    print(f"[DEBUG] Timeout {timeouts_count}/3 en recv_close esperando último ACK...", file=sys.stderr)
                 # Reenviar FIN+ACK por si no lo recibió
                 self._sendto(fin_ack_seg, self.dest_address)
                 if timeouts_count >= 3:
                     if SocketTCP.debug:
-                        print("[DEBUG] Alcanzado límite de 3 timeouts en recv_close. Cerrando conexión.")
+                        print("[DEBUG] Alcanzado límite de 3 timeouts en recv_close. Cerrando conexión.", file=sys.stderr)
                     break
 
         self.is_connected = False
