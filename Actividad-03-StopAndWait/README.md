@@ -25,13 +25,14 @@ Para que cada paquete UDP transporte la información de control necesaria, le ag
 - **Datos:** Hasta 16 bytes por paquete.
 - Implementamos las funciones estáticas `create_segment` (diccionario -> bytes) y `parse_segment` (bytes -> diccionario) para empaquetar y desempaquetar fácilmente.
 
-#### 1.2. Establecimiento de Conexión: 3-Way Handshakes
+#### 1.2. Establecimiento de Conexión: 3-Way Handshake
 
 La conexión se establece mediante un saludo de 3 vías implementado en las funciones `connect(address)` del cliente y `accept()` del servidor:
 
-1. **Cliente:** Elige una secuencia inicial aleatoria (0 a 100) y envía un `SYN`.
-2. **Servidor:** Al recibir el `SYN`, crea un nuevo socket en un puerto efímero asignado por el sistema operativo. Desde este nuevo socket responde con `SYN + ACK`.
-3. **Cliente:** Recibe el `SYN-ACK`, actualiza la dirección de destino al nuevo puerto del servidor y envía el `ACK` final.
+1. **Cliente (`connect`):** Selecciona un número de secuencia inicial aleatorio (entre 0 y 100) y envía un paquete `SYN, seq=x` hacia la dirección de escucha (`bind`) del servidor.
+2. **Servidor (`accept`):** Al recibir el `SYN`, crea una nueva instancia de `SocketTCP` en un puerto efímero asignado por el sistema operativo (`bind(('', 0))`). Desde este nuevo socket responde con `SYN+ACK, seq=x+1` (y confirmando `ack_num = x + 1`).
+3. **Cliente (`connect`):** Al recibir el `SYN+ACK`, actualiza su dirección de destino (`self.dest_address`) hacia el nuevo puerto efímero del servidor y envía el paquete final `ACK, seq=x+2`.
+4. **Servidor (`accept`):** Recibe el `ACK` final, marca la conexión como establecida (`is_connected = True`) y retorna `(new_socket, new_address)`.
 
 ##### Diagrama del 3-Way Handshake:
 
@@ -41,13 +42,14 @@ sequenceDiagram
     participant C as Cliente (connect)
     participant S as Servidor (accept)
 
-    C->>S: SYN (seq = x)
-    Note over S: Recibe SYN<br/>Crea new_socket en puerto efímero
-    S->>C: SYN + ACK (seq = y, ack_num = x + 1)
-    Note over C: Recibe SYN-ACK<br/>Actualiza dirección al nuevo puerto
-    C->>S: ACK (seq = x + 1, ack_num = y + 1)
-    Note over S: Recibe ACK final<br/>Retorna (new_socket, new_address)
-    Note over C,S: Conexión establecida
+    Note over C: 1. Selecciona seq = x inicial aleatorio (0-100)
+    C->>S: SYN, seq=x
+    Note over S: 2. Recibe SYN en puerto principal<br/>Crea new_socket en puerto efímero<br/>Fija ack_num = x + 1
+    S->>C: SYN+ACK, seq=x+1
+    Note over C: 3. Recibe SYN+ACK<br/>Actualiza dest_address al puerto efímero<br/>Avanza secuencia
+    C->>S: ACK, seq=x+2
+    Note over S: 4. Recibe ACK final<br/>new_socket queda conectado<br/>Retorna (new_socket, new_address)
+    Note over C,S: Conexión establecida exitosamente (is_connected = True)
 ```
 
 #### 1.3. Transferencia de Datos con Stop & Wait
@@ -63,12 +65,36 @@ Implementamos `send(message)` y `recv(buff_size)` con las siguientes decisiones 
 - **Continuidad de secuencias:**
     Al iniciar `send` no reinicia la secuencia en 0, sino que utiliza como número de secuencia inicial el último `seq` almacenado tras el handshake, garantizando la continuidad de la numeración a lo largo de toda la conexión.
 
+##### Diagrama de Transferencia de Datos con Stop & Wait (`send` y `recv`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as Emisor (send)
+    participant R as Receptor (recv)
+
+    Note over E,R: Fase 1: Notificación previa de la longitud total
+    E->>R: DATOS: message_length (ej: "19"), seq=k
+    Note over R: Lee longitud esperada (19 bytes)<br/>remaining_bytes = 19
+    R->>E: ACK, ack_num = k + len("19")
+
+    Note over E,R: Fase 2: Envío de fragmentos (máx 16 bytes) con Stop & Wait
+    E->>R: DATOS: Fragmento 1 (16 bytes), seq=s1
+    Note over R: bytes_recibidos = 16
+    R->>E: ACK, ack_num = s1 + 16
+
+    E->>R: DATOS: Fragmento 2 (3 bytes), seq=s2
+    Note over R: bytes_recibidos = 19 (completo)
+    R->>E: ACK, ack_num = s2 + 3
+
+```
+
 #### 1.4. Fin de Conexión
 
-Para el cierre implementamos `close()` en el cliente y `recv_close()` en el servidor:
-- El cliente envía un `FIN`.
-- El servidor responde con un paquete combinado `FIN + ACK`.
-- El cliente responde con el `ACK` final y ambos extremos cierran sus sockets.
+Para el cierre implementamos `close()` en el Host A y `recv_close()` en el Host B:
+- El Host A envía un paquete `FIN, seq=z`.
+- El Host B responde con un paquete combinado `FIN+ACK, seq=z+1`.
+- El Host A responde con el `ACK, seq=z+2` final y ambos extremos cierran sus sockets liberando recursos.
 
 ##### Diagrama de Cierre de Conexión:
 
@@ -78,11 +104,14 @@ sequenceDiagram
     participant A as Host A (close)
     participant B as Host B (recv_close)
 
-    A->>B: FIN
-    Note over B: Recibe FIN y prepara cierre
-    B->>A: FIN + ACK
-    Note over A: Recibe confirmación
-    A->>B: ACK final
+    Note over A: Inicia proceso de cierre
+    A->>B: FIN, seq=z
+    Note over B: Recibe FIN<br/>Prepara cierre y liberación de recursos
+    B->>A: FIN+ACK, seq=z+1
+    Note over A: Recibe FIN+ACK<br/>Confirma que Host B está listo para cerrar
+    A->>B: ACK, seq=z+2
+    Note over A: Cierra su socket (is_closed = True)
+    Note over B: Recibe ACK final<br/>Cierra su socket (is_closed = True)
     Note over A,B: Sockets cerrados exitosamente
 ```
 
@@ -158,7 +187,7 @@ Existen dos formas de probar bajo condiciones de pérdida de paquetes:
 
 ### 3. Manejo de Pérdidas y Casos Borde
 
-#### 3.1. Caso Borde: Pérdida del Último ACK del Handshake (Paso 7)
+#### 3.1. Caso Borde: Pérdida del Último ACK del Handshake
 
 ##### ¿Qué sucede?
 Cuando el cliente recibe el `SYN-ACK`, considera que la conexión ya está establecida, envía su `ACK` final y pasa de inmediato a llamar a `send()`. Si ese último `ACK` se pierde en la red:
@@ -173,13 +202,14 @@ sequenceDiagram
     participant C as Cliente (connect -> send)
     participant S as Servidor (accept)
 
-    C->>S: 1. SYN (seq = x)
-    S->>C: 2. SYN + ACK (seq = y, ack_num = x + 1)
-    Note over C: Cliente completa connect()<br/>y pasa a send()
-    C--xS: 3. ACK final (Se pierde en la red)
+    C->>S: SYN, seq=x
+    S->>C: SYN+ACK, seq=x+1
+    Note over C: Cliente completa connect()<br/>y pasa inmediatamente a send()
+    C--xS: ACK, seq=x+2 (Se pierde en el canal)
     Note over S: Servidor sigue esperando ACK en accept()
-    C->>S: 4. DATOS: message_length
-    Note over S: Servidor detecta datos anticipados,<br/>los guarda en buffered_packet<br/>y finaliza accept()
+    C->>S: DATOS: message_length, seq=x+2
+    Note over S: Servidor detecta segmento de datos en accept()<br/>Guarda el paquete en self.buffered_packet<br/>Finaliza accept() retornando (new_socket, addr)
+    Note over C,S: Handshake destrabado con éxito<br/>recv() consumirá inicialmente buffered_packet
 ```
 
 ##### Solución Implementada:
@@ -192,11 +222,33 @@ Si se pierde un ACK enviado por el receptor, el emisor agotará su timeout y ree
 * Si es un paquete repetido, no lo volvemos a meter al búfer de datos para no corromper el archivo.
 * Simplemente le reenviamos el ACK al emisor para que sepa que ya lo tenemos y pueda avanzar.
 
-#### 3.3. Cierre Tolerante a Pérdidas (Paso 8)
+#### 3.3. Cierre Tolerante a Pérdidas
 
 Para que el cierre no se quede pegado si se pierden paquetes:
 - **En `close()`:** Si no llega el `FIN+ACK` dentro del timeout, reenvía el `FIN`. Si tras 3 timeouts no hay respuesta, asume que la otra parte ya cerró y termina. Si recibe el `FIN+ACK`, reenvía el último ACK 3 veces seguidas (esperando un timeout entre cada uno) para asegurarse de que llegue.
 - **En `recv_close()`:** Envía el `FIN+ACK` y espera el ACK final con un límite de 3 timeouts. Si se cumple el tiempo, retransmite el `FIN+ACK`. Tras el tercer intento, asume que el otro lado ya cerró y finaliza.
+
+##### Diagrama de Cierre Tolerante a Pérdidas (Manejo de Timeouts y Triple ACK):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Host A (close)
+    participant B as Host B (recv_close)
+
+    A->>B: FIN, seq=z
+    B--xA: FIN+ACK, seq=z+1 (Se pierde en el canal)
+    Note over A: Timeout esperando FIN+ACK (intento 1/3)<br/>Reenvía FIN
+    A->>B: FIN, seq=z (Retransmisión)
+    B->>A: FIN+ACK, seq=z+1
+    Note over A: Recibe FIN+ACK con éxito<br/>Envía ráfaga de 3 ACKs espaciados por timeout
+    A->>B: 1° ACK, seq=z+2
+    A->>B: 2° ACK, seq=z+2
+    A->>B: 3° ACK, seq=z+2
+    Note over A: Cierra socket A (is_closed = True)
+    Note over B: Recibe ACK final<br/>Cierra socket B (is_closed = True)
+    Note over A,B: Cierre tolerante completado exitosamente
+```
 
 ### 4. Pruebas de Funcionalidad y Resultados
 
