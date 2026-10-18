@@ -33,6 +33,8 @@ class SocketTCP:
 
         self.congestion_control_on = False
         self.congestion_controler = CongestionControl(8)
+        self.congestion_controler = CongestionControl(8)
+        self.number_of_sent_segments = 0
 
     def set_congestion_control(self, is_on: bool):
         self.congestion_control_on = is_on
@@ -72,13 +74,17 @@ class SocketTCP:
             pass
 
     def _sendto(self, data, addr, timer_index=0):
+        is_lost = False
         if SocketTCP.loss_rate > 0.0 and random.random() < SocketTCP.loss_rate:
             if SocketTCP.debug:
                 print(f"[DEBUG LOSS] Paquete simulado como perdido hacia {addr}", file=sys.stderr)
-            return
-
+            is_lost = True
+        self.number_of_sent_segments += 1
         try:
-            self.socket.sendto(data, addr, timer_index=timer_index)
+            if is_lost:
+                self.socket.sendto(data, ("127.0.0.1", 65530), timer_index=timer_index)
+            else:
+                self.socket.sendto(data, addr, timer_index=timer_index)
         except RuntimeError as e:
             if "threads can only be started once" in str(e):
                 pass
@@ -430,10 +436,13 @@ class SocketTCP:
                             new_elements_count = steps_to_move + (data_window.window_size - old_window_size)
                             start_index = max(0, data_window.window_size - new_elements_count)
 
+                            sent_valid_data = False
                             for i in range(start_index, data_window.window_size):
-                                send_window_element(i)
+                                if data_window.get_data(i) is not None:
+                                    send_window_element(i)
+                                    sent_valid_data = True
 
-                            if start_index >= data_window.window_size and data_window.get_data(0) is not None:
+                            if not sent_valid_data and data_window.get_data(0) is not None:
                                 send_window_element(0)
 
             except TimeoutError:
@@ -475,10 +484,10 @@ class SocketTCP:
             try:
                 while not received_fin_ack:
                     data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
-                    self._safe_stop_timer(0)
                     seg = self.parse_segment(data)
                     # Recibe FIN y ACK
                     if seg['fin'] and seg['ack']:
+                        self._safe_stop_timer(0)
                         received_fin_ack = True
                         host_b_fin_seq = seg['seq']
                         break
@@ -553,13 +562,14 @@ class SocketTCP:
         while timeouts_count < 3:
             try:
                 data, _ = self.socket.recvfrom(UDP_BUFFER_SIZE)
-                self._safe_stop_timer(0)
                 seg = self.parse_segment(data)
                 if seg['ack'] and not seg['fin']:
                     # Recibido último ACK
+                    self._safe_stop_timer(0)
                     break
                 elif seg['fin'] and not seg['ack']:
                     # No le llegó el FIN+ACK, reenviar FIN+ACK
+                    self._safe_stop_timer(0)
                     self._sendto(fin_ack_seg, self.dest_address, timer_index=0)
                 elif not seg['syn'] and not seg['fin'] and not seg['ack']:
                     # Reenviar ACK de datos por si aún retransmite
