@@ -108,5 +108,4 @@ La ruta default (`0.0.0.0/0 0 65535 127.0.0.1 7000`) **debe ir siempre en la úl
 - **Modelo utilizado:** Gemini de Google.
 - **Forma de uso:**
   - Apoyo en el diseño del empaquetado binario de headers con `struct` y manejo de iteradores circulares (`itertools.cycle`) por área de red.
-  - Automatización de scripts de terminal para generar las tablas de rutas y ejecutar las topologías de prueba.
   - Estructuración y redacción del informe.
