@@ -8,6 +8,8 @@ ciclos_por_area = {}
 
 
 def parse_packet(IP_packet: bytes) -> dict:
+    if len(IP_packet) < 7:
+        raise ValueError(f"Paquete IP inválido: se esperaban al menos 7 bytes, se recibieron {len(IP_packet)}")
     raw_ip, port, ttl = struct.unpack("!4sHB", IP_packet[:7])
     return {
         "ip": socket.inet_ntoa(raw_ip),
@@ -59,10 +61,11 @@ def check_routes(routes_file_name: str, destination_address: tuple):
     if not rutas_area:
         return None
 
-    if area_clave not in ciclos_por_area:
-        ciclos_por_area[area_clave] = itertools.cycle(rutas_area)
+    clave_ciclo = (routes_file_name,) + area_clave
+    if clave_ciclo not in ciclos_por_area:
+        ciclos_por_area[clave_ciclo] = itertools.cycle(rutas_area)
 
-    return next(ciclos_por_area[area_clave])
+    return next(ciclos_por_area[clave_ciclo])
 
 
 if __name__ == "__main__":
@@ -80,7 +83,11 @@ if __name__ == "__main__":
 
     while True:
         paquete_ip, _ = sock.recvfrom(4096)
-        pkt = parse_packet(paquete_ip)
+        try:
+            pkt = parse_packet(paquete_ip)
+        except ValueError as err:
+            print(err)
+            continue
         destino = (pkt["ip"], pkt["puerto"])
 
         if pkt["ttl"] <= 0:
@@ -88,7 +95,7 @@ if __name__ == "__main__":
             continue
 
         if destino == mi_direccion:
-            print(pkt["mensaje"].decode("utf-8"))
+            print(pkt["mensaje"].decode("utf-8", errors="replace"))
         else:
             next_hop = check_routes(archivo_rutas, destino)
             if next_hop is None:

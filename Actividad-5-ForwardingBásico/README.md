@@ -55,7 +55,9 @@ La ruta default (`0.0.0.0/0 0 65535 127.0.0.1 7000`) **debe ir siempre en la úl
 
 1. **Tabla de rutas mal configurada (Bucle infinito):** Al modificar `R2` para enviar el tráfico de `8883` de vuelta hacia `R1` (`8881`), mientras `R1` lo envía hacia `R2` (`8882`), se genera un *routing loop* infinito. Sin TTL, el paquete rebota eternamente entre ambos routers sin llegar jamás a `R3`.
 2. **Red de 5 routers y Round-Robin:** Al enviar paquetes desde `R1` (`8881`) hacia `R5` (`8885`), los paquetes alternan caminos y **no siempre dan la misma cantidad de saltos**. El camino mínimo es de **3 saltos** (`8881 -> 8882 -> 8884 -> 8885`, visto en los envíos pares), mientras que en los envíos impares los desvíos por Round-Robin en `R3` y `R4` hicieron que los paquetes dieran **7 saltos** (`8881 -> 8882 -> 8883 -> 8882 -> 8884 -> 8882 -> 8883 -> 8885`).
-3. **Red ampliada de 7 routers (R0 y R6 añadidos):** Al intercalar envíos entre `R1 -> R5` y `R5 -> R1`, comprobamos que `R2` cicla de forma independiente en cada área: alternó `8883` y `8884` para los paquetes hacia `R5`, y alternó `8880` y `8881` para los paquetes de vuelta hacia `R1`.
+3. **Red ampliada de 7 routers (R0 y R6 añadidos):** Al intercalar envíos entre `R1 -> R5` y `R5 -> R1`, comprobamos que `R2` cicla de forma independiente en cada área: alternó `8883` y `8884` para los paquetes hacia `R5`, y alternó `8880` y `8881` para los paquetes de vuelta hacia `R1`. En cuanto a la cantidad de saltos, tampoco es constante:
+   * En el sentido `R1 -> R5` (camino mínimo de **3 saltos**), los envíos impares dieron **7 saltos** por los desvíos en `R3` y `R4`, mientras que los pares tomaron el camino directo de **3 saltos** (`8881 -> 8882 -> 8884 -> 8885`).
+   * En el sentido `R5 -> R1` (camino mínimo de **3 saltos**, ej. `8885 -> 8883 -> 8882 -> 8881`), los paquetes variaron entre **3 saltos** (ruta directa), **4 saltos** (al pasar por `R0`: `R2 -> R0 -> R1`) y **9 saltos** (cuando coincidieron los desvíos de Round-Robin en `R4`, `R3` y `R0`).
 
 #### Tablas creadas para la topología de 7 routers:
 ```text
@@ -88,7 +90,7 @@ La ruta default (`0.0.0.0/0 0 65535 127.0.0.1 7000`) **debe ir siempre en la úl
 # rutas_R5_v4.txt
 127.0.0.1/24 8880 8884 127.0.0.1 8884
 127.0.0.1/24 8880 8884 127.0.0.1 8883
-127.0.0.1/24 8886 8886 127.0.0.1 8884
+127.0.0.1/24 8886 8886 127.0.0.1 8883
 
 # rutas_R6_v4.txt
 127.0.0.1/24 8880 8885 127.0.0.1 8882
