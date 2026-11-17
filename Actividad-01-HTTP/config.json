@@ -1,9 +1,0 @@
-{
-  "user": "Vegan Server",
-  "blocked": ["www.dcc.uchile.cl", "cc4303.bachmann.cl/secret"],
-  "forbidden_words": [
-    {"proxy": "[REDACTED]"},
-    {"DCC": "[FORBIDDEN]"},
-    {"biblioteca": "[???]"}
-  ]
-}
