@@ -82,6 +82,8 @@ def fragment_IP_packet(IP_packet: bytes, MTU: int) -> list:
     pkt = parse_packet(IP_packet)
     datos = pkt["mensaje"]
     max_datos = MTU - 16
+    if max_datos <= 0:
+        raise ValueError(f"MTU ({MTU}) debe ser mayor que el tamaño del header (16 bytes)")
     fragmentos = []
     desplazamiento = 0
 
@@ -117,10 +119,15 @@ def reassemble_IP_packet(fragment_list: list):
 
     offset_esperado = 0
     datos_unidos = b""
+    vistos = set()
 
     for frag in fragmentos:
+        clave = (frag["offset"], frag["tamano"])
+        if clave in vistos:
+            continue
         if frag["offset"] != offset_esperado:
             return None
+        vistos.add(clave)
         datos_unidos += frag["mensaje"]
         offset_esperado += frag["tamano"]
 

@@ -1,7 +1,7 @@
 # Actividad 06: Fragmentación IP
 - **Integrantes:** Bastián Arias y Tomás León
-- **Repositorio:** https://github.com/Bastian-AAI/CC4303-Redes
-- **Archivos principales:** `router.py`, `sender.py`, `prueba_router.py`
+- **Repositorio:** https://github.com/Bastian-AAI/CC4303-Redes/tree/C3/Actividad-06
+- **Archivos principales:** `router.py`, `sender.py`
 - **Informe:** `README.md`
 
 ## 1. Implementación
@@ -55,6 +55,6 @@ Al enviar el datagrama de 150 bytes desde `R4` (`8884`) con destino `R1` (`8881`
 - Al llegar a `R2`, el enlace hacia `R1` tiene `MTU = 100`. Como los tres fragmentos miden `80B`, `80B` y `22B` (todos menores o iguales a `100`), `R2` **no necesita volver a fragmentarlos** y los reenvía directamente a `R1`, donde se reensamblan con éxito.
 
 ## 4. Declaración de uso de Inteligencia Artificial
-- **Modelo utilizado:** Gemini de Google.- **Forma de uso:**
-
+- **Modelo utilizado:** Gemini de Google.
+- **Forma de uso:**
   - Automatización de scripts de prueba en terminal y estructuración del informe.
