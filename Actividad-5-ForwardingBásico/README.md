@@ -1,6 +1,6 @@
 # Actividad 05: Forwarding Básico (Mini-Internet)
 - **Integrantes:** Bastián Arias y Tomás León
-- **Repositorio:** https://github.com/Bastian-AAI/CC4303-Redes
+- **Repositorio:** https://github.com/Bastian-AAI/CC4303-Redes/tree/C3/Actividad-05
 - **Archivos principales:** `router.py`, `sender.py`, `prueba_router.py`
 - **Informe:** `README.md`
 
